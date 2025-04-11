@@ -1,0 +1,14 @@
+---
+title: "Preetish Parikh"
+image: "DSC02949.jpg"
+
+about:
+    template: jolla
+    links: 
+     -  icon: envelope
+        href: mailto:prparikh@ucsd.edu
+     -  icon: linkedin
+        href: https://www.linkedin.com/in/preetish-parikh/
+---
+
+I'm pursuing Master's in Business Analytics at Rady School of Management
