@@ -1,0 +1,433 @@
+---
+title: "Poisson Regression Examples"
+author: "Preetish Parikh"
+date: today
+callout-appearance: minimal # this hides the blue "i" icon on .callout-notes
+---
+
+## Blueprinty Case Study
+
+### Introduction
+
+Blueprinty is a small firm that makes software for developing blueprints specifically for submitting patent applications to the US patent office. Their marketing team would like to make the claim that patent applicants using Blueprinty's software are more successful in getting their patent applications approved. Ideal data to study such an effect might include the success rate of patent applications before using Blueprinty's software and after using it. Unfortunately, such data is not available. 
+
+However, Blueprinty has collected data on 1,500 mature (non-startup) engineering firms. The data include each firm's number of patents awarded over the last 5 years, regional location, age since incorporation, and whether or not the firm uses Blueprinty's software. The marketing team would like to use this data to make the claim that firms using Blueprinty's software are more successful in getting their patent applications approved.
+
+:::: {.callout-note collapse="true"}
+### Data
+```{r}
+library(tidyverse)
+data <- read_csv("C:/Users/parik/mysite/blog/project 4/blueprinty.csv")
+# Load necessary library
+library(tidyverse)
+
+# Load the data (already successful based on your history)
+data <- read_csv("C:/Users/parik/mysite/blog/project 4/blueprinty.csv")
+head(data)
+```
+::::
+
+:::: {.callout-note collapse="true"}
+### Table
+```{r}
+# Convert iscustomer to a factor and relabel levels for clarity
+data <- data %>%
+  mutate(customer = factor(iscustomer, labels = c("Non-Customer", "Customer")))
+
+# Histogram of number of patents by customer status
+ggplot(data, aes(x = patents, fill = customer)) +
+  geom_histogram(position = "dodge", bins = 30, color = "black") +
+  labs(
+    title = "Histogram of Patents by Customer Status",
+    x = "Number of Patents",
+    y = "Count",
+    fill = "Blueprinty Customer?"
+  ) +
+  theme_minimal()
+
+# Compare means and standard deviations
+data %>%
+  group_by(customer) %>%
+  summarize(
+    mean_patents = mean(patents, na.rm = TRUE),
+    sd_patents = sd(patents, na.rm = TRUE),
+    n = n()
+  )
+```
+::::
+
+## Comparing Patent 
+To evaluate whether Blueprinty customers are more successful, we began by comparing the number of patents awarded across firms who do and do not use Blueprinty's software.
+The histogram below illustrates the distribution of patent counts. We observe that Blueprinty customers tend to have a higher number of patents overall, with their distribution skewed slightly to the right compared to non-customers. This suggests that firms using the software are achieving more patent grants on average.
+The table below provides the mean and standard deviation of patent counts across both groups:
+1.Mean Patents (Customer):*~9*
+2.Mean Patents (Non-Customer):*~6*
+3.Standard Deviation:
+
+Blueprinty customers are not selected at random. It may be important to account for systematic differences in the age and regional location of customers vs non-customers.
+
+:::: {.callout-note collapse="true"}
+### Compare
+```{r}
+# Convert region to factor for plotting and summary
+data$region <- as.factor(data$region)
+
+# Bar plot: Region vs Customer Status
+ggplot(data, aes(x = region, fill = customer)) +
+  geom_bar(position = "fill") +
+  labs(
+    title = "Proportion of Customers by Region",
+    x = "Region",
+    y = "Proportion",
+    fill = "Blueprinty Customer?"
+  ) +
+  scale_y_continuous(labels = scales::percent) +
+  theme_minimal()
+
+# Box plot: Age by Customer Status
+ggplot(data, aes(x = customer, y = age, fill = customer)) +
+  geom_boxplot() +
+  labs(
+    title = "Firm Age by Customer Status",
+    x = "Customer Status",
+    y = "Firm Age (Years)"
+  ) +
+  theme_minimal()
+
+```
+::::
+### Exploring Firm Demographics by Customer Status
+
+To better understand the characteristics of firms using Blueprinty's software, we examined both their regional distribution and age.
+From the region-wise bar plot, we see that the proportion of Blueprinty customers varies across regions. Some regions (such as the West or Northeast) have a higher share of users, possibly indicating stronger adoption in tech-dense or innovation-oriented areas.
+The boxplot of firm age shows that customers tend to be slightly older firms, suggesting that more established companies are more likely to invest in specialized tools like Blueprinty's software. However, the overlap in age distributions indicates that firm age alone doesn't fully explain software adoption.
+These insights help contextualize our regression analysis later on, where we’ll control for region and age while examining the impact of Blueprinty usage on patent success.
+
+### Estimation of Simple Poisson Model
+
+Since our outcome variable of interest can only be small integer values per a set unit of time, we can use a Poisson density to model the number of patents awarded to each engineering firm over the last 5 years. We start by estimating a simple Poisson model via Maximum Likelihood.
+
+📌 Poisson Likelihood Function
+The likelihood function for independent Poisson observations Y1, Y2, ..., Yn is:
+    L(λ | Y1, ..., Yn) = ∏ (e^(-λ) * λ^Yi / Yi!)  for i = 1 to n
+## The log-likelihood function is:
+
+      log L(λ | Y1, ..., Yn) = ∑ [ -λ + Yi * log(λ) - log(Yi!) ]  for i = 1 to n
+
+This log-likelihood will be maximized to estimate λ using observed data.
+
+:::: {.callout-note collapse="true"}
+### Log Likelihood
+```{r}
+# Define the Poisson log-likelihood function
+poisson_loglikelihood <- function(lambda, Y) {
+  # Return negative infinity if lambda is not positive (log(λ) undefined for λ ≤ 0)
+  if (lambda <= 0) return(-Inf)
+  
+  # Log-likelihood for Poisson: sum of log probabilities
+  sum(dpois(Y, lambda = lambda, log = TRUE))
+}
+```
+
+```{r}
+# Define a vector of lambda values to evaluate
+lambda_vals <- seq(0.1, 20, by = 0.1)
+
+# Compute log-likelihood for each lambda value using the observed patent counts
+loglik_vals <- sapply(lambda_vals, function(lam) poisson_loglikelihood(lambda = lam, Y = data$patents))
+
+# Plot log-likelihood vs lambda
+plot(lambda_vals, loglik_vals, type = "l", lwd = 2,
+     col = "blue", xlab = expression(lambda),
+     ylab = "Log-Likelihood",
+     main = "Poisson Log-Likelihood vs. Lambda")
+```
+:::: 
+
+:::: {.callout-note collapse="true"}
+### Derivation of Maximum Likelihood Estimator (MLE) for λ in Poisson Model
+# The log-likelihood for the Poisson distribution is:
+
+     log L(λ | Y1, ..., Yn) = ∑ [ -λ + Yi * log(λ) - log(Yi!) ]
+
+# Taking the derivative with respect to λ:
+      d/dλ [log L(λ)] = ∑ [ -1 + Yi / λ ] = -n + (∑ Yi) / λ
+
+# Set the derivative to 0 to find the MLE:
+
+     -n + (∑ Yi) / λ = 0  -->  λ = (∑ Yi) / n = mean(Y)
+
+# So, the MLE for λ is the sample mean of Y.
+# Compute lambda MLE directly
+lambda_mle <- mean(data$patents)
+lambda_mle
+::::
+
+:::: {.callout-note collapse="true"}
+### nEgative Log-likelihood Function
+```{r}
+# Use optim() to find the MLE of lambda by maximizing the log-likelihood
+# Note: optim minimizes by default, so we negate the log-likelihood
+
+neg_loglik <- function(lambda) {
+  return(-poisson_loglikelihood(lambda, data$patents))
+}
+
+# Run optimization starting from an initial guess (e.g., lambda = 1)
+optim_result <- optim(par = 1, fn = neg_loglik, method = "Brent", lower = 0.01, upper = 50)
+
+# Extract the MLE of lambda
+lambda_mle_optim <- optim_result$par
+lambda_mle_optim
+```
+:::: 
+
+:::: {.callout-note collapse="true"}
+### Estimation of Poisson Regression Model
+
+Next, we extend our simple Poisson model to a Poisson Regression Model such that $Y_i = \text{Poisson}(\lambda_i)$ where $\lambda_i = \exp(X_i'\beta)$. The interpretation is that the success rate of patent awards is not constant across all firms ($\lambda$) but rather is a function of firm characteristics $X_i$. Specifically, we will use the covariates age, age squared, region, and whether the firm is a customer of Blueprinty.
+
+```{r}
+# Define the Poisson regression log-likelihood function
+poisson_regression_likelihood <- function(beta, Y, X) {
+  # Convert beta to a numeric vector in case it's passed as a matrix
+  beta <- as.numeric(beta)
+  
+  # Compute linear predictor: η_i = X_i' * beta
+  eta <- X %*% beta
+  
+  # Inverse link function: λ_i = exp(η_i)
+  lambda <- exp(eta)
+  
+  # Compute the log-likelihood
+  log_likelihood <- sum(dpois(Y, lambda = lambda, log = TRUE))
+  
+  return(log_likelihood)
+}
+```
+```{r}
+# Prepare covariate matrix X
+# One-hot encode region (excluding one region as baseline)
+X_region <- model.matrix(~ region, data = data)[, -1]  # drop intercept column
+
+# Construct design matrix X: intercept, age, age^2, region dummies, customer status
+X <- cbind(
+  intercept = 1,
+  age = data$age,
+  age_sq = data$age^2,
+  X_region,
+  customer = as.numeric(data$customer == "Customer")
+)
+
+# Outcome variable
+Y <- data$patents
+
+# Define negative log-likelihood for optimization
+neg_loglik_regression <- function(beta) {
+  -poisson_regression_likelihood(beta, Y, X)
+}
+
+# Initial values for beta (zeros)
+init_beta <- rep(0, ncol(X))
+
+# Find MLE using optim
+fit <- optim(par = init_beta,
+             fn = neg_loglik_regression,
+             method = "BFGS",
+             hessian = TRUE)
+
+# Extract coefficient estimates
+beta_hat <- fit$par
+
+# Compute standard errors from Hessian
+hessian <- fit$hessian
+var_cov_matrix <- solve(hessian)
+se_beta <- sqrt(diag(var_cov_matrix))
+
+# Create a table of estimates and standard errors
+coef_table <- data.frame(
+  Coefficient = beta_hat,
+  Std_Error = se_beta,
+  row.names = colnames(X)
+)
+
+# Display the table
+print(coef_table)
+```
+::::
+
+```{r}
+# Fit Poisson regression using glm() for comparison
+glm_fit <- glm(patents ~ age + I(age^2) + region + customer, 
+               data = data, 
+               family = poisson(link = "log"))
+
+# Summary of glm results
+summary(glm_fit)
+
+# Extract coefficients and standard errors into a table
+glm_table <- data.frame(
+  Coefficient = coef(glm_fit),
+  Std_Error = sqrt(diag(vcov(glm_fit)))
+)
+
+# Display the glm result table
+print(glm_table)
+
+```
+:::: {.callout-note collapse="true"}
+# Interpretation:
+1.Intercept:The intercept represents the log expected number of patents for the baseline group:
+a. non-customer firm in the base region (the region dropped during dummy encoding) with age = 0.
+Since age = 0 is not realistic, it's better to interpret in combination with age terms.
+2.Age & Age^2:
+A positive coefficient on age and a small negative coefficient on age^2 suggests a concave relationship:
+the number of patents increases with firm age but at a decreasing rate.
+
+This reflects diminishing returns in innovation as firms mature.
+
+3.Region Dummies:
+-Each region coefficient shows the difference in log expected patent counts** compared to the baseline region.
+-Positive values indicate regions with higher innovation output than the baseline.
+
+4.Customer:
+-A positive and statistically significant coefficient on the `customer` variable indicates that
+firms using Blueprinty's software have **higher expected patent counts**, even after controlling for age and region.
+-Since this is a log-linear model, exp(coef) gives the multiplicative effect:
+e.g., exp(0.2) ≈ 1.22 → Blueprinty customers file about **22% more patents**, on average.
+::::
+```{r}
+# Identify column index of the "customer" variable in your X matrix
+customer_col_index <- which(colnames(X) == "customer")
+
+# Create counterfactual design matrices
+X_0 <- X
+X_1 <- X
+
+# Set customer column to 0 and 1 for non-customer and customer scenarios
+X_0[, customer_col_index] <- 0
+X_1[, customer_col_index] <- 1
+
+# Compute predicted patent counts for each scenario
+y_pred_0 <- exp(X_0 %*% beta_hat)  # Without Blueprinty
+y_pred_1 <- exp(X_1 %*% beta_hat)  # With Blueprinty
+
+# Calculate average treatment effect
+treatment_effect <- mean(y_pred_1 - y_pred_0)
+treatment_effect
+
+```
+### Conclusion
+The average predicted increase in the number of patents attributable specifically to being a Blueprinty customer is approximately 0.79 patents per firm.
+This indicates that firms using Blueprinty’s software can expect, on average, nearly one additional patent compared to non-customer firms.
+This effect is both statistically significant (as previously established from regression results) and practically meaningful, clearly highlighting the positive impact of Blueprinty’s software on patent success.
+
+## AirBnB Case Study
+
+### Introduction
+
+AirBnB is a popular platform for booking short-term rentals. In March 2017, students Annika Awad, Evan Lebo, and Anna Linden scraped of 40,000 Airbnb listings from New York City.  The data include the following variables:
+
+:::: {.callout-note collapse="true"}
+### Variable Definitions
+
+    - `id` = unique ID number for each unit
+    - `last_scraped` = date when information scraped
+    - `host_since` = date when host first listed the unit on Airbnb
+    - `days` = `last_scraped` - `host_since` = number of days the unit has been listed
+    - `room_type` = Entire home/apt., Private room, or Shared room
+    - `bathrooms` = number of bathrooms
+    - `bedrooms` = number of bedrooms
+    - `price` = price per night (dollars)
+    - `number_of_reviews` = number of reviews for the unit on Airbnb
+    - `review_scores_cleanliness` = a cleanliness score from reviews (1-10)
+    - `review_scores_location` = a "quality of location" score from reviews (1-10)
+    - `review_scores_value` = a "quality of value" score from reviews (1-10)
+    - `instant_bookable` = "t" if instantly bookable, "f" if not
+
+::::
+
+```{r}
+library(tidyverse)
+library(scales)
+library(broom)  # For tidy model summaries
+```
+```{r}
+# Load dataset (adjust the filename if necessary)
+airbnb_data <- read_csv ("C:/Users/parik/mysite/blog/project 4/airbnb.csv")
+
+# View structure and summary
+glimpse(airbnb_data)
+summary(airbnb_data)
+
+# Check for missing values
+airbnb_data %>% summarise(across(everything(), ~ sum(is.na(.))))
+```
+```{r}
+# Select relevant variables and drop missing rows
+airbnb_clean <- airbnb_data %>%
+  select(number_of_reviews, days, room_type, bathrooms, bedrooms, price,
+         review_scores_cleanliness, review_scores_location, review_scores_value,
+         instant_bookable) %>%
+  drop_na() %>%
+  mutate(
+    room_type = as.factor(room_type),
+    instant_bookable = factor(instant_bookable, levels = c("f", "t"), labels = c("No", "Yes"))
+  )
+```
+```{r}
+# Histogram of number of reviews
+ggplot(airbnb_clean, aes(x = number_of_reviews)) +
+  geom_histogram(bins = 40, fill = "skyblue", color = "black") +
+  scale_x_continuous(labels = comma) +
+  labs(title = "Distribution of Number of Reviews (Proxy for Bookings)",
+       x = "Number of Reviews", y = "Count") +
+  theme_minimal()
+
+# Boxplot: number of reviews by room type
+ggplot(airbnb_clean, aes(x = room_type, y = number_of_reviews, fill = room_type)) +
+  geom_boxplot() +
+  scale_y_continuous(trans = 'log1p', labels = comma) +
+  labs(title = "Number of Reviews by Room Type",
+       x = "Room Type", y = "Number of Reviews (log + 1)") +
+  theme_minimal()
+```
+```{r}
+poisson_model <- glm(
+  number_of_reviews ~ days + room_type + bathrooms + bedrooms + price +
+    review_scores_cleanliness + review_scores_location + review_scores_value,
+  data = airbnb_clean,
+  family = poisson(link = "log")
+)
+```
+
+```{r}
+# Create a tidy table of coefficients with exponentiated values
+coef_table <- tidy(poisson_model) %>%
+  mutate(
+    exp_coef = exp(estimate),
+    conf.low = exp(estimate - 1.96 * std.error),
+    conf.high = exp(estimate + 1.96 * std.error)
+  ) %>%
+  select(term, estimate, std.error, exp_coef, conf.low, conf.high)
+
+print(coef_table)
+```
+
+```{r}
+ggplot(airbnb_clean, aes(x = number_of_reviews)) +
+  geom_histogram(bins = 50, fill = "#3498DB", color = "white", alpha = 0.8) +
+  scale_x_continuous(labels = comma) +
+  labs(
+    title = "Distribution of Number of Reviews",
+    subtitle = "Most listings receive fewer than 50 reviews",
+    x = "Number of Reviews",
+    y = "Number of Listings"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(face = "bold"),
+    plot.subtitle = element_text(color = "gray40")
+  )
+```
+
